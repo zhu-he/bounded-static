@@ -670,13 +670,14 @@ where
 
 #[cfg(feature = "std")]
 /// Blanket [`ToBoundedStatic`] impl for converting `HashMap<K, V>` to `HashMap<K, V>: 'static`.
-impl<K, V, S: std::hash::BuildHasher> ToBoundedStatic for std::collections::HashMap<K, V, S>
+impl<K, V, S: std::hash::BuildHasher + Default + 'static> ToBoundedStatic
+    for std::collections::HashMap<K, V, S>
 where
     K: ToBoundedStatic,
     K::Static: Eq + std::hash::Hash,
     V: ToBoundedStatic,
 {
-    type Static = std::collections::HashMap<K::Static, V::Static>;
+    type Static = std::collections::HashMap<K::Static, V::Static, S>;
 
     fn to_static(&self) -> Self::Static {
         self.iter()
@@ -687,13 +688,14 @@ where
 
 #[cfg(feature = "std")]
 /// Blanket [`IntoBoundedStatic`] impl for for converting `HashMap<K, V>` into `HashMap<K, V>: 'static`.
-impl<K, V, S: std::hash::BuildHasher> IntoBoundedStatic for std::collections::HashMap<K, V, S>
+impl<K, V, S: std::hash::BuildHasher + Default + 'static> IntoBoundedStatic
+    for std::collections::HashMap<K, V, S>
 where
     K: IntoBoundedStatic,
     K::Static: Eq + std::hash::Hash,
     V: IntoBoundedStatic,
 {
-    type Static = std::collections::HashMap<K::Static, V::Static>;
+    type Static = std::collections::HashMap<K::Static, V::Static, S>;
 
     fn into_static(self) -> Self::Static {
         self.into_iter()
@@ -704,12 +706,13 @@ where
 
 #[cfg(feature = "std")]
 /// Blanket [`ToBoundedStatic`] impl for converting `HashSet<T>` into `HashSet<T>: 'static`.
-impl<T, S: std::hash::BuildHasher> ToBoundedStatic for std::collections::HashSet<T, S>
+impl<T, S: std::hash::BuildHasher + Default + 'static> ToBoundedStatic
+    for std::collections::HashSet<T, S>
 where
     T: ToBoundedStatic,
     T::Static: Eq + std::hash::Hash,
 {
-    type Static = std::collections::HashSet<T::Static>;
+    type Static = std::collections::HashSet<T::Static, S>;
 
     fn to_static(&self) -> Self::Static {
         self.iter().map(ToBoundedStatic::to_static).collect()
@@ -718,12 +721,13 @@ where
 
 #[cfg(feature = "std")]
 /// Blanket [`IntoBoundedStatic`] impl for converting `HashSet<T>` into `HashSet<T>: 'static`.
-impl<T, S: std::hash::BuildHasher> IntoBoundedStatic for std::collections::HashSet<T, S>
+impl<T, S: std::hash::BuildHasher + Default + 'static> IntoBoundedStatic
+    for std::collections::HashSet<T, S>
 where
     T: IntoBoundedStatic,
     T::Static: Eq + std::hash::Hash,
 {
-    type Static = std::collections::HashSet<T::Static>;
+    type Static = std::collections::HashSet<T::Static, S>;
 
     fn into_static(self) -> Self::Static {
         self.into_iter()
@@ -1375,6 +1379,8 @@ mod collections_tests {
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod std_tests {
+    use core::any::Any;
+
     use super::*;
 
     fn ensure_static<T: 'static>(t: T) {
@@ -1405,6 +1411,36 @@ mod std_tests {
         let v = 0i16;
         let value = std::collections::HashMap::from([(Cow::from(&k), v)]);
         let to_static = value.to_static();
+        ensure_static(to_static);
+    }
+
+    #[test]
+    fn test_custom_random_state() {
+        struct RandomState;
+
+        impl std::hash::BuildHasher for RandomState {
+            type Hasher = std::collections::hash_map::DefaultHasher;
+
+            fn build_hasher(&self) -> Self::Hasher {
+                std::collections::hash_map::DefaultHasher::default()
+            }
+        }
+
+        impl Default for RandomState {
+            fn default() -> Self {
+                Self
+            }
+        }
+
+        let k = "key";
+        let v = 0i16;
+        let value = std::collections::HashMap::<_, _, RandomState>::from_iter([(k, v)]);
+        let to_static = value.to_static();
+        assert_eq!(value.type_id(), to_static.type_id());
+        ensure_static(to_static);
+        let value = std::collections::HashSet::<_, RandomState>::from_iter([k]);
+        let to_static = value.to_static();
+        assert_eq!(value.type_id(), to_static.type_id());
         ensure_static(to_static);
     }
 
